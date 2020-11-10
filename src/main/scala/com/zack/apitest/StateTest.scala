@@ -35,7 +35,19 @@ object StateTest {
     //需求，对于温度传感器温度值跳变，超过10度，报警
     val alterStream = dataStream
         .keyBy(_.id)
-        .flatMap(new TempChangeAlter(10.0))
+        //.flatMap(new TempChangeAlter(10.0))
+        .flatMapWithState[(String, Double, Double), Double]({
+          case (data: SensorReading, None) => (List.empty, Some(data.temperature))
+          case (data: SensorReading, lastTemp: Some[Double]) => {
+            val diff = (data.temperature - lastTemp.get).abs
+            if (diff > 10.0) {
+              (List((data.id, lastTemp.get, data.temperature)), Some(data.temperature))
+            }
+            else {
+              (List.empty, Some(data.temperature))
+            }
+          }
+        })
 
     alterStream.print()
 
