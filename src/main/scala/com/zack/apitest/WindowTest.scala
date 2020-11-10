@@ -1,6 +1,8 @@
 package com.zack.apitest
 
 import org.apache.flink.api.common.functions.ReduceFunction
+import org.apache.flink.streaming.api.TimeCharacteristic
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.streaming.api.windowing.assigners.{EventTimeSessionWindows, SlidingEventTimeWindows, TumblingEventTimeWindows}
 import org.apache.flink.streaming.api.windowing.time.Time
@@ -16,6 +18,7 @@ object WindowTest {
   def main(args: Array[String]): Unit = {
     val env = StreamExecutionEnvironment.getExecutionEnvironment
     env.setParallelism(1)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
 //    val inputPath = "D:\\IdeaProjects\\flink-demo\\src\\main\\resources\\sensor.txt"
 //    val inputStream = env.readTextFile(inputPath)
@@ -27,7 +30,12 @@ object WindowTest {
         val arr = data.split(",")
         SensorReading(arr(0).trim, arr(1).trim.toLong, arr(2).trim.toDouble)
       } )
+    //  .assignAscendingTimestamps(_.timestamp * 1000L)\
+      .assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor[SensorReading](Time.seconds(3)) {
+        override def extractTimestamp(t: SensorReading): Long = t.timestamp * 1000L
+      })
 
+    val lateTag = new OutputTag[(String, Double, Long)]("late")
     // 每15秒统计一次，窗口内各传感器的温度值的最小值
     val resultStream = dataStream
         .map( data => (data.id, data.temperature, data.timestamp) )
@@ -38,8 +46,12 @@ object WindowTest {
 //        .timeWindow(Time.seconds(15))
        // .countWindow(10)  //滚动计数窗口
         .timeWindow(Time.seconds(15))
+        .allowedLateness(Time.minutes(1))
+        .sideOutputLateData(lateTag)
         .reduce( (currentResult, newData) => (currentResult._1, currentResult._2.min(newData._2), newData._3) )
-    resultStream.print()
+
+    resultStream.getSideOutput(lateTag).print("late")
+    resultStream.print("result")
     env.execute("window test")
   }
 }
