@@ -4,7 +4,7 @@ import org.apache.flink.api.scala.ExecutionEnvironment
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.table.api.{DataTypes, EnvironmentSettings, Table, TableEnvironment}
 import org.apache.flink.table.api.bridge.scala._
-import org.apache.flink.table.descriptors.{FileSystem, OldCsv, Schema}
+import org.apache.flink.table.descriptors.{Csv, FileSystem, Kafka, OldCsv, Schema}
 
 /**
  * com.zack.apitest.tableapi
@@ -50,14 +50,27 @@ object TableApiTest {
     //2.1读取文件
     val filePath = "D:\\IdeaProjects\\flink-demo\\src\\main\\resources\\sensor.txt"
     tableEnv.connect(new FileSystem().path(filePath))
-      .withFormat(new OldCsv())
+      .withFormat(new Csv())
       .withSchema(new Schema()
         .field("id", DataTypes.STRING())
         .field("timestamp", DataTypes.BIGINT())
         .field("temperature", DataTypes.DOUBLE()))
       .createTemporaryTable("inputTable")
 
-    val inputTable: Table = tableEnv.from("inputTable")
+    //2.2从kafka读取数据
+    tableEnv.connect(new Kafka()
+      .version("0.11")
+      .topic("sensor")
+      .property("zookeeper.connect", "192.168.1.52:2181")
+      .property("bootstrap.servers", "192.168.1.52:9092"))
+      .withFormat(new Csv())
+      .withSchema(new Schema()
+        .field("id", DataTypes.STRING())
+        .field("timestamp", DataTypes.BIGINT())
+        .field("temperature", DataTypes.DOUBLE()))
+      .createTemporaryTable("kafkaInputTable")
+
+    val inputTable: Table = tableEnv.from("kafkaInputTable")
     inputTable.toAppendStream[(String, Long, Double)].print()
 
     env.execute("table api test")
